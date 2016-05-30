@@ -1,3 +1,11 @@
+// Firefly
+//
+// This is a firefly-themed pattern for an 8x8 RGB LED array connected to an Arduino
+// It currently requires Adafruit's Neopixel library
+//
+//
+//
+
 #include <Adafruit_NeoPixel.h>
 #ifdef __AVR__
   #include <avr/power.h>
@@ -16,11 +24,8 @@
 const uint32_t NumPixels = 64;
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NumPixels, PIN, NEO_GRB + NEO_KHZ800);
 
-// IMPORTANT: To reduce NeoPixel burnout risk, add 1000 uF capacitor across
-// pixel power leads, add 300 - 500 Ohm resistor on first pixel's data input
-// and minimize distance between Arduino and first pixel.  Avoid connecting
-// on a live circuit...if you must, connect GND first.
 
+// Color palette
 // c9ff2f
 // b4e52a
 // a0cc25
@@ -38,6 +43,7 @@ uint8_t BackgroundSame = 0;
 uint8_t BackgroundConverge = 10;
 uint8_t BackgroundDiverge = 100;
 
+const uint8_t MaxFireflies = 3;
 typedef struct Firefly
 {
   uint8_t pixel;
@@ -46,9 +52,14 @@ typedef struct Firefly
   uint32_t tick;
   uint32_t duration;
 };
+uint32_t nextFireflyTimer = 0;
+uint32_t FireflyWaitMin = 600;
+uint32_t FireflyWaitMax = 1500;
+uint32_t FireflyDurationMin = 400;
+uint32_t FireflyDurationMax = 1200;
 
 Pixel pixels[NumPixels];
-Firefly firefly;
+Firefly firefly[MaxFireflies];
 
 void setup() {
   strip.begin();
@@ -57,10 +68,14 @@ void setup() {
   fill(nightColor);
   strip.show();
 
-  resetFirefly(firefly);
   for (uint8_t i=0; i < NumPixels; i++) {
     pixels[i].color = nightColor;
   }
+  for (uint8_t i=0; i < MaxFireflies; i++) {
+    clearFirefly(firefly[i]);
+  }
+  startFirefly(firefly[0]);
+  nextFireflyTimer = random(FireflyWaitMin, FireflyWaitMax);
 }
 
 void loop() {
@@ -70,15 +85,33 @@ void loop() {
     jitterBackground();
     backgroundTimer = 0;
   }
-  //setRandomPixel(strip.Color(0,0,4), strip.Color(0,0,10), 10);
-
-  bool valid = updateFirefly(firefly);
-  strip.setPixelColor(firefly.pixel, firefly.currentColor);
-  strip.show();
-
-  if (!valid) {
-    resetFirefly(firefly);
+  
+  for (uint8_t i=0; i < MaxFireflies; i++) {
+    updateFirefly(firefly[i]);
+    if (firefly[i].pixel != 255) {
+      strip.setPixelColor(firefly[i].pixel, firefly[i].currentColor);
+    }
   }
+
+  nextFireflyTimer--;
+  if (!nextFireflyTimer == 0) {
+    uint8_t nextFirefly = -1;
+    for (uint8_t i=0; i < MaxFireflies; i++) {
+      if (firefly[i].pixel == 255) {
+        nextFirefly = i;
+        break;
+      }
+    }
+    if (nextFirefly != -1) {
+      startFirefly(firefly[nextFirefly]);
+      nextFireflyTimer = random(FireflyWaitMin, FireflyWaitMax);
+    }
+    else {
+      nextFireflyTimer = 1; // Try again next iteration
+    }
+  }
+  
+  strip.show();
   delay(1);
 }
 
@@ -109,7 +142,7 @@ void jitterBackground() {
   }
 }
 
-bool updateFirefly(Firefly& ff) {
+void updateFirefly(Firefly& ff) {
 
   ff.tick++;
   float d = ff.tick / (float)(ff.duration / 2);
@@ -132,19 +165,23 @@ bool updateFirefly(Firefly& ff) {
     ff.currentColor = strip.Color(r, g, b);
     
     if (ff.tick == ff.duration / 2) {
-      return false;
+      ff.pixel = 255;
     }
   }
-  return true;
 }
 
-void resetFirefly(Firefly& ff) {
-  
-  ff.pixel = random(strip.numPixels());
+void clearFirefly(Firefly& ff) {
+  ff.pixel = 255;
   ff.currentColor = nightColor;
   ff.targetColor = fireflyColor;
   ff.tick = 0;
-  ff.duration = (random(500, 1200) / 2) * 2;
+  ff.duration = 0;
+}
+
+void startFirefly(Firefly& ff) {
+  clearFirefly(ff);
+  ff.pixel = random(strip.numPixels());
+  ff.duration = (random(FireflyDurationMin, FireflyDurationMax) / 2) * 2;
 }
 
 void setRandomPixel(uint32_t colBase, uint32_t colRand, uint8_t threshold) {
